@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -25,13 +25,13 @@
 // - https://github.com/nodejs/node/blob/master/src/tcp_wrap.h
 
 import { notImplemented } from "../_utils.ts";
-import { unreachable } from "../../testing/asserts.ts";
+import { unreachable } from "../_util/asserts.ts";
 import { ConnectionWrap } from "./connection_wrap.ts";
 import { AsyncWrap, providerType } from "./async_wrap.ts";
 import { LibuvStreamWrap } from "./stream_wrap.ts";
 import { ownerSymbol } from "./symbols.ts";
 import { codeMap } from "./uv.ts";
-import { delay } from "../../async/mod.ts";
+import { delay } from "../_util/async.ts";
 import { kStreamBaseField } from "./stream_wrap.ts";
 import { isIP } from "../internal/net.ts";
 import {
@@ -209,6 +209,8 @@ export class TCP extends ConnectionWrap {
         return codeMap.get("EADDRINUSE")!;
       } else if (e instanceof Deno.errors.AddrNotAvailable) {
         return codeMap.get("EADDRNOTAVAIL")!;
+      } else if (e instanceof Deno.errors.PermissionDenied) {
+        throw e;
       }
 
       // TODO(cmorten): map errors to appropriate error codes.
@@ -229,11 +231,19 @@ export class TCP extends ConnectionWrap {
     if (this.#listener) {
       this.#listener.ref();
     }
+
+    if (this[kStreamBaseField]) {
+      this[kStreamBaseField].ref();
+    }
   }
 
   override unref() {
     if (this.#listener) {
       this.#listener.unref();
+    }
+
+    if (this[kStreamBaseField]) {
+      this[kStreamBaseField].unref();
     }
   }
 

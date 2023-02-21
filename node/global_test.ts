@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import "./global.ts";
 import {
   assert,
@@ -100,11 +100,12 @@ Deno.test("global.ts evaluates synchronously", async () => {
       }'; console.log(globalThis.async ? 'async' : 'sync')";
       import "data:application/javascript,globalThis.async = true";`,
     );
-    const { code, stdout } = await Deno.spawn(Deno.execPath(), {
+    const command = new Deno.Command(Deno.execPath(), {
       args: ["run", "--no-check", tempPath],
       stdin: "null",
       stderr: "null",
     });
+    const { code, stdout } = await command.output();
     assertEquals(code, 0);
     assertEquals(new TextDecoder().decode(stdout).trim(), "sync");
   } finally {

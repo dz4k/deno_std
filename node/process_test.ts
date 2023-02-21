@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-undef
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 import "./global.ts";
 import {
@@ -14,7 +14,7 @@ import { stripColor } from "../fmt/colors.ts";
 import { deferred } from "../async/deferred.ts";
 import * as path from "../path/mod.ts";
 import { delay } from "../async/delay.ts";
-import { env } from "./process.ts";
+import { argv, env } from "./process.ts";
 
 Deno.test({
   name: "process.cwd and process.chdir success",
@@ -131,7 +131,7 @@ Deno.test({
 
     const cwd = path.dirname(path.fromFileUrl(import.meta.url));
 
-    const { stdout } = await Deno.spawn(Deno.execPath(), {
+    const command = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "--quiet",
@@ -140,6 +140,7 @@ Deno.test({
       ],
       cwd,
     });
+    const { stdout } = await command.output();
 
     const decoder = new TextDecoder();
     assertEquals(stripColor(decoder.decode(stdout).trim()), "1\n2");
@@ -218,6 +219,7 @@ Deno.test({
 Deno.test({
   name: "process.argv",
   fn() {
+    assert(Array.isArray(argv));
     assert(Array.isArray(process.argv));
     assert(
       process.argv[0].match(/[^/\\]*deno[^/\\]*$/),
@@ -291,13 +293,9 @@ Deno.test({
   fn() {
     Deno.env.set("FOO", "1");
     assert("FOO" in process.env);
-    assertThrows(() => {
-      "BAR" in process.env;
-    });
+    assertFalse("BAR" in process.env);
     assert(Object.hasOwn(process.env, "FOO"));
-    assertThrows(() => {
-      Object.hasOwn(process.env, "BAR");
-    });
+    assertFalse(Object.hasOwn(process.env, "BAR"));
   },
 });
 
@@ -325,12 +323,173 @@ Deno.test({
 });
 
 Deno.test({
+  name: "process.stdin readable with a TTY",
+  // TODO(PolarETech): Run this test even in non tty environment
+  ignore: !Deno.isatty(Deno.stdin.rid),
+  async fn() {
+    const promise = deferred();
+    const expected = ["foo", "bar", null, "end"];
+    const data: (string | null)[] = [];
+
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("readable", () => {
+      data.push(process.stdin.read());
+    });
+    process.stdin.on("end", () => {
+      data.push("end");
+    });
+
+    process.stdin.push("foo");
+    process.nextTick(() => {
+      process.stdin.push("bar");
+      process.nextTick(() => {
+        process.stdin.push(null);
+        promise.resolve();
+      });
+    });
+
+    await promise;
+    assertEquals(process.stdin.readableHighWaterMark, 0);
+    assertEquals(data, expected);
+  },
+});
+
+Deno.test({
+  name: "process.stdin readable with piping a file",
+  async fn() {
+    const expected = ["65536", "foo", "bar", "null", "end"];
+    const scriptPath = "./node/testdata/process_stdin.ts";
+    const filePath = "./node/testdata/process_stdin_dummy.txt";
+
+    const shell = Deno.build.os === "windows" ? "cmd.exe" : "/bin/sh";
+    const cmd = `"${Deno.execPath()}" run ${scriptPath} < ${filePath}`;
+    const args = Deno.build.os === "windows" ? ["/d", "/c", cmd] : ["-c", cmd];
+
+    const p = new Deno.Command(shell, {
+      args,
+      stdin: "null",
+      stdout: "piped",
+      stderr: "null",
+      windowsRawArguments: true,
+    });
+
+    const { stdout } = await p.output();
+    const data = new TextDecoder().decode(stdout).trim().split("\n");
+    assertEquals(data, expected);
+  },
+});
+
+Deno.test({
+  name: "process.stdin readable with piping a stream",
+  async fn() {
+    const expected = ["16384", "foo", "bar", "null", "end"];
+    const scriptPath = "./node/testdata/process_stdin.ts";
+
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", scriptPath],
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "null",
+    });
+    const child = command.spawn();
+
+    const writer = await child.stdin.getWriter();
+    writer.ready
+      .then(() => writer.write(new TextEncoder().encode("foo\nbar")))
+      .then(() => writer.releaseLock())
+      .then(() => child.stdin.close());
+
+    const { stdout } = await child.output();
+    const data = new TextDecoder().decode(stdout).trim().split("\n");
+    assertEquals(data, expected);
+  },
+});
+
+Deno.test({
+  name: "process.stdin readable with piping a socket",
+  ignore: Deno.build.os === "windows",
+  async fn() {
+    const expected = ["16384", "foo", "bar", "null", "end"];
+    const scriptPath = "./node/testdata/process_stdin.ts";
+
+    const listener = Deno.listen({ hostname: "127.0.0.1", port: 9000 });
+    listener.accept().then(async (conn) => {
+      await conn.write(new TextEncoder().encode("foo\nbar"));
+      conn.close();
+      listener.close();
+    });
+
+    const shell = "/bin/bash";
+    const cmd =
+      `"${Deno.execPath()}" run ${scriptPath} < /dev/tcp/127.0.0.1/9000`;
+    const args = ["-c", cmd];
+
+    const p = new Deno.Command(shell, {
+      args,
+      stdin: "null",
+      stdout: "piped",
+      stderr: "null",
+    });
+
+    const { stdout } = await p.output();
+    const data = new TextDecoder().decode(stdout).trim().split("\n");
+    assertEquals(data, expected);
+  },
+});
+
+Deno.test({
+  name: "process.stdin readable with null",
+  async fn() {
+    const expected = ["65536", "null", "end"];
+    const scriptPath = "./node/testdata/process_stdin.ts";
+
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", scriptPath],
+      stdin: "null",
+      stdout: "piped",
+      stderr: "null",
+    });
+
+    const { stdout } = await command.output();
+    const data = new TextDecoder().decode(stdout).trim().split("\n");
+    assertEquals(data, expected);
+  },
+});
+
+Deno.test({
+  name: "process.stdin readable with unsuitable stdin",
+  // TODO(PolarETech): Prepare a similar test that can be run on Windows
+  ignore: Deno.build.os === "windows",
+  async fn() {
+    const expected = ["16384", "null", "end"];
+    const scriptPath = "./node/testdata/process_stdin.ts";
+    const directoryPath = "./node/testdata/";
+
+    const shell = "/bin/bash";
+    const cmd = `"${Deno.execPath()}" run ${scriptPath} < ${directoryPath}`;
+    const args = ["-c", cmd];
+
+    const p = new Deno.Command(shell, {
+      args,
+      stdin: "null",
+      stdout: "piped",
+      stderr: "null",
+      windowsRawArguments: true,
+    });
+
+    const { stdout } = await p.output();
+    const data = new TextDecoder().decode(stdout).trim().split("\n");
+    assertEquals(data, expected);
+  },
+});
+
+Deno.test({
   name: "process.stdout",
   fn() {
     assertEquals(process.stdout.fd, Deno.stdout.rid);
     const isTTY = Deno.isatty(Deno.stdout.rid);
     assertEquals(process.stdout.isTTY, isTTY);
-    const consoleSize = isTTY ? Deno.consoleSize(Deno.stdout.rid) : undefined;
+    const consoleSize = isTTY ? Deno.consoleSize() : undefined;
     assertEquals(process.stdout.columns, consoleSize?.columns);
     assertEquals(process.stdout.rows, consoleSize?.rows);
     assertEquals(
@@ -358,7 +517,7 @@ Deno.test({
     assertEquals(process.stderr.fd, Deno.stderr.rid);
     const isTTY = Deno.isatty(Deno.stderr.rid);
     assertEquals(process.stderr.isTTY, isTTY);
-    const consoleSize = isTTY ? Deno.consoleSize(Deno.stderr.rid) : undefined;
+    const consoleSize = isTTY ? Deno.consoleSize() : undefined;
     assertEquals(process.stderr.columns, consoleSize?.columns);
     assertEquals(process.stderr.rows, consoleSize?.rows);
     assertEquals(
@@ -525,7 +684,7 @@ Deno.test("process.getgid", () => {
   if (Deno.build.os === "windows") {
     assertEquals(process.getgid, undefined);
   } else {
-    assertEquals(process.getgid?.(), Deno.getGid());
+    assertEquals(process.getgid?.(), Deno.gid());
   }
 });
 
@@ -533,7 +692,7 @@ Deno.test("process.getuid", () => {
   if (Deno.build.os === "windows") {
     assertEquals(process.getuid, undefined);
   } else {
-    assertEquals(process.getuid?.(), Deno.getUid());
+    assertEquals(process.getuid?.(), Deno.uid());
   }
 });
 
@@ -542,7 +701,7 @@ Deno.test({
   async fn() {
     const cwd = path.dirname(path.fromFileUrl(import.meta.url));
 
-    const { stdout } = await Deno.spawn(Deno.execPath(), {
+    const command = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "--quiet",
@@ -551,6 +710,7 @@ Deno.test({
       ],
       cwd,
     });
+    const { stdout } = await command.output();
 
     const decoder = new TextDecoder();
     assertEquals(stripColor(decoder.decode(stdout).trim()), "exit");

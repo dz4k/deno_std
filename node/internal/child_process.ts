@@ -1,14 +1,14 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 // This module implements 'child_process' module of Node.JS API.
 // ref: https://nodejs.org/api/child_process.html
-import { assert } from "../../_util/assert.ts";
+import { assert } from "../_util/asserts.ts";
 import { EventEmitter } from "../events.ts";
 import { os } from "../internal_binding/constants.ts";
-import { notImplemented } from "../_utils.ts";
+import { notImplemented, warnNotImplemented } from "../_utils.ts";
 import { Readable, Stream, Writable } from "../stream.ts";
-import { deferred } from "../../async/deferred.ts";
-import { isWindows } from "../../_util/os.ts";
+import { deferred } from "../_util/async.ts";
+import { isWindows } from "../_util/os.ts";
 import { nextTick } from "../_next_tick.ts";
 import {
   AbortError,
@@ -44,6 +44,10 @@ import process from "../process.ts";
 
 type NodeStdio = "pipe" | "overlapped" | "ignore" | "inherit" | "ipc";
 type DenoStdio = "inherit" | "piped" | "null";
+
+// @ts-ignore Deno[Deno.internal] is used on purpose here
+const DenoCommand = Deno[Deno.internal]?.nodeUnstable?.Command ||
+  Deno.Command;
 
 export function stdioStringToArray(
   stdio: NodeStdio,
@@ -124,7 +128,7 @@ export class ChildProcess extends EventEmitter {
     null,
   ];
 
-  #process!: Deno.Child;
+  #process!: Deno.ChildProcess;
   #spawned = deferred<void>();
 
   constructor(
@@ -140,6 +144,7 @@ export class ChildProcess extends EventEmitter {
       cwd,
       shell = false,
       signal,
+      windowsVerbatimArguments = false,
     } = options || {};
     const [
       stdin = "pipe",
@@ -158,14 +163,15 @@ export class ChildProcess extends EventEmitter {
     const stringEnv = mapValues(env, (value) => value.toString());
 
     try {
-      this.#process = Deno.spawnChild(cmd, {
+      this.#process = new DenoCommand(cmd, {
         args: cmdArgs,
         cwd,
         env: stringEnv,
         stdin: toDenoStdio(stdin as NodeStdio | number),
         stdout: toDenoStdio(stdout as NodeStdio | number),
         stderr: toDenoStdio(stderr as NodeStdio | number),
-      });
+        windowsRawArguments: windowsVerbatimArguments,
+      }).spawn();
       this.pid = this.#process.pid;
 
       if (stdin === "pipe") {
@@ -263,6 +269,10 @@ export class ChildProcess extends EventEmitter {
     this.#process.unref();
   }
 
+  disconnect() {
+    warnNotImplemented("ChildProcess.prototype.disconnect");
+  }
+
   async #_waitForChildStreamsToClose() {
     const promises = [] as Array<Promise<void>>;
     if (this.stdin && !this.stdin.destroyed) {
@@ -328,7 +338,7 @@ function toDenoSignal(signal: number | string): Deno.Signal {
   }
 
   const denoSignal = signal as Deno.Signal;
-  if (os.signals[denoSignal] != null) {
+  if (denoSignal in os.signals) {
     return denoSignal;
   }
   throw new ERR_UNKNOWN_SIGNAL(signal);
@@ -342,7 +352,7 @@ export interface ChildProcessOptions {
   /**
    * Current working directory of the child process.
    */
-  cwd?: string;
+  cwd?: string | URL;
 
   /**
    * Environment variables passed to the child process.
@@ -391,12 +401,8 @@ export interface ChildProcessOptions {
    */
   serialization?: "json" | "advanced";
 
-  /**
-   * NOTE: This option is not yet implemented.
-   *
-   * @see https://github.com/rust-lang/rust/issues/29494
-   * @see https://github.com/denoland/deno/issues/8852
-   */
+  /** No quoting or escaping of arguments is done on Windows. Ignored on Unix.
+   * Default: false. */
   windowsVerbatimArguments?: boolean;
 
   /**
@@ -406,9 +412,9 @@ export interface ChildProcessOptions {
 }
 
 function copyProcessEnvToEnv(
-  env: Record<string, string | undefined>,
+  env: Record<string, string | number | boolean | undefined>,
   name: string,
-  optionEnv?: Record<string, string>,
+  optionEnv?: Record<string, string | number | boolean>,
 ) {
   if (
     Deno.env.get(name) &&
@@ -451,7 +457,7 @@ function normalizeStdioOption(
 export function normalizeSpawnArguments(
   file: string,
   args: string[],
-  options: SpawnSyncOptions,
+  options: SpawnOptions & SpawnSyncOptions,
 ) {
   validateString(file, "file");
 
@@ -659,10 +665,6 @@ function buildCommand(
 
     // Set the shell, switches, and commands.
     if (isWindows) {
-      // TODO(uki00a): Currently, due to escaping issues, it is difficult to reproduce the same behavior as Node.js's `child_process` module.
-      // For more details, see the following issues:
-      // * https://github.com/rust-lang/rust/issues/29494
-      // * https://github.com/denoland/deno/issues/8852
       if (typeof shell === "string") {
         file = shell;
       } else {
@@ -700,33 +702,61 @@ function _createSpawnSyncError(
   return error;
 }
 
-export interface SpawnSyncOptions {
-  cwd?: string | URL;
+export interface SpawnOptions extends ChildProcessOptions {
+  /**
+   * NOTE: This option is not yet implemented.
+   */
+  timeout?: number;
+  /**
+   * NOTE: This option is not yet implemented.
+   */
+  killSignal?: string;
+}
+
+export interface SpawnSyncOptions extends
+  Pick<
+    ChildProcessOptions,
+    | "cwd"
+    | "env"
+    | "argv0"
+    | "stdio"
+    | "uid"
+    | "gid"
+    | "shell"
+    | "windowsVerbatimArguments"
+    | "windowsHide"
+  > {
   input?: string | Buffer | DataView;
-  argv0?: string;
-  stdio?: Array<NodeStdio | number | null | undefined | Stream> | NodeStdio;
-  env?: Record<string, string>;
-  uid?: number;
-  gid?: number;
   timeout?: number;
   maxBuffer?: number;
   encoding?: string;
-  shell?: boolean | string;
-  windowsVerbatimArguments?: boolean;
-  windowsHide?: boolean;
-  /** The below options aren't currently supported. However, they're here for validation checks. */
+  /**
+   * NOTE: This option is not yet implemented.
+   */
   killSignal?: string;
-  detached?: boolean;
 }
 
 export interface SpawnSyncResult {
   pid?: number;
-  output?: [string | null, string | Buffer, string | Buffer];
-  stdout?: Buffer | string;
-  stderr?: Buffer | string;
+  output?: [string | null, string | Buffer | null, string | Buffer | null];
+  stdout?: Buffer | string | null;
+  stderr?: Buffer | string | null;
   status?: number | null;
   signal?: string | null;
   error?: Error;
+}
+
+function parseSpawnSyncOutputStreams(
+  output: Deno.CommandOutput,
+  name: "stdout" | "stderr",
+): string | Buffer | null {
+  // new Deno.Command().outputSync() returns getters for stdout and stderr that throw when set
+  // to 'inherit'.
+  try {
+    return Buffer.from(output[name]) as string | Buffer;
+  } catch {
+    return null;
+  }
 }
 
 export function spawnSync(
@@ -743,13 +773,14 @@ export function spawnSync(
     uid,
     gid,
     maxBuffer,
+    windowsVerbatimArguments = false,
   } = options;
   const normalizedStdio = normalizeStdioOption(stdio);
   [command, args] = buildCommand(command, args ?? [], shell);
 
   const result: SpawnSyncResult = {};
   try {
-    const output = Deno.spawnSync(command, {
+    const output = new DenoCommand(command, {
       args,
       cwd,
       env,
@@ -757,27 +788,30 @@ export function spawnSync(
       stderr: toDenoStdio(normalizedStdio[2] as NodeStdio | number),
       uid,
       gid,
-    });
+      windowsRawArguments: windowsVerbatimArguments,
+    }).outputSync();
 
-    const { signal } = output;
-    const status = signal ? null : 0;
-    let stdout = Buffer.from(output.stdout) as string | Buffer;
-    let stderr = Buffer.from(output.stderr) as string | Buffer;
+    const status = output.signal ? null : 0;
+    let stdout = parseSpawnSyncOutputStreams(output, "stdout");
+    let stderr = parseSpawnSyncOutputStreams(output, "stderr");
 
-    if (stdout.length > maxBuffer! || stderr.length > maxBuffer!) {
+    if (
+      (stdout && stdout.length > maxBuffer!) ||
+      (stderr && stderr.length > maxBuffer!)
+    ) {
       result.error = _createSpawnSyncError("ENOBUFS", command, args);
     }
 
     if (encoding && encoding !== "buffer") {
-      stdout = stdout.toString(encoding);
-      stderr = stderr.toString(encoding);
+      stdout = stdout && stdout.toString(encoding);
+      stderr = stderr && stderr.toString(encoding);
     }
 
     result.status = status;
-    result.signal = signal;
+    result.signal = output.signal;
     result.stdout = stdout;
     result.stderr = stderr;
-    result.output = [signal, stdout, stderr];
+    result.output = [output.signal, stdout, stderr];
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) {
       result.error = _createSpawnSyncError("ENOENT", command, args);
@@ -962,6 +996,7 @@ function toDenoArgs(args: string[]): string[] {
 
 export default {
   ChildProcess,
+  normalizeSpawnArguments,
   stdioStringToArray,
   spawnSync,
 };

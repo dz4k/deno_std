@@ -1,3 +1,210 @@
+### 0.177.0 / 2023.02.06
+
+- feat(encoding/csv): handle CSV byte-order marks (#3143)
+- fix(node/child_process): enable promisify(execFile) (#3161)
+- fix(node/process): null is not returned when reaching end-of-file in stdin
+  (#3113)
+- fix(semver): allow unsetting build metadata (#3157)
+
+### 0.176.0 / 2023.02.02
+
+- fix(node): disable worker_threads (#3151)
+- fix(node): throw permisison error instead of unknown error (#3133)
+- fix(node/util): stricter runtime type checking (#3122)
+- fix: make encoding/front_matter work in a browser (#3154)
+
+### 0.175.0 / 2023.01.28
+
+- BREAKING(dotenv,fmt,io): remove deprecated APIs (#3134)
+- BREAKING(path): rework basename and dirname to be coreutils compatible (#3089)
+- feat(node): AsyncLocalStorage (#3137)
+- feat(semver): add support for build metadata (#3126)
+
+### 0.174.0 / 2023.01.25
+
+- feat(fmt/printf): add formatter i/I (Deno.inspect) (#3100)
+- fix(encoding/csv): escape cells containing newlines (LFs) (#3128)
+
+### 0.173.0 / 2023.01.16
+
+- fix(fs): change globstar default to true for expandGlob and expandGlobSync
+  (#3115)
+- fix(streams): prevent artificial terminal newline in `TextLineStream` (#3103)
+- fix: revert "feat(node/cluster): `cluster` module for Node compat (#2271)"
+  (#3111)
+
+### 0.172.0 / 2023.01.13
+
+- feat(collection): add toArray method to BinaryHeap (#3079)
+- feat(node/cluster): `cluster` module for Node compat (#2271)
+- fix(datetime): `.quarter` calculation for `difference()` (#3085)
+- fix(encoding/jsonc): avoid prototype pollution in Node.js and Browser (#3077)
+- fix(node): support ref & unref of TCP handle (#3102)
+- fix(path): correctly handle trailing slashes for posix basename (#3088)
+
+### 0.171.0 / 2023.01.05
+
+- feat(http): add --header option to file_server (#2977)
+- feat(node): Add support for os.uptime (#3052)
+- feat(node/diagnostics_channel): initial implementation (#3050)
+- feat(node/url): domainToASCII/domainToUnicode (#3022)
+- fix(flags): parse method looses types in certain cases with collect option
+  (#3040)
+- fix(flags): types for aliases defined as array are ignored (#3043)
+- fix(node/http): avoid empty chunk issue of flash (#3062)
+- fix(node/http): ignore body when status code is one of 101, 204, 205, 304
+  (#3067)
+- fix(node/util): reference error of 'process' (#3037)
+- fix(path): correctly handle trailing slashes for basename (#3068)
+- fix(testing): do not mutate tokens when creating details (#3049)
+- fix: don't use windows-xl runners, too expensive (#3021)
+
+### 0.170.0 / 2022.12.19
+
+- Revert "fix(node/http): do not buffer first chunk (#2989)" (#3013)
+
+### 0.169.0 / 2022.12.19
+
+- feat(datetime): single-export files (#3007)
+- feat(media_types): single-export files (#3001)
+- fix(http): prevent downstream connections from getting closed when the
+  response stream throws an error (#3008)
+- fix(node): add missing exports to `process` (#3014)
+
+### 0.168.0 / 2022.12.14
+
+- BREAKING(archive): move to single-export files (#2958)
+- BREAKING(dotenv): rename config to load (#2616)
+- BREAKING(io): single-export files (#2975)
+- fix(encoding): base58 decoding (#2982)
+- fix(node): fix nextTick shim in deploy (#2980)
+- fix(node): ignore NotSupported errors coming from `Deno.chmod` (#2996)
+- fix(node/http): do not buffer first chunk (#2989)
+- perf(encoding/yaml) Don't allocate buffers unnecessarily (#2967)
+- perf(node/buffer): improve utf8 decoding performance (#2986)
+
+### 0.167.0 / 2022.12.01
+
+- Reorder steps to view documentation (#2948)
+- Revert "test(node/http): modify writable of ClientRequest (#2945)" (#2950)
+- feat(async): retry (#2929)
+- feat(dotenv): support type inference based on `restrictEnvAccessTo` option
+  (#2933)
+- feat(node): add os.version (#2962)
+- feat(node): add util.types.isProxy (#2960)
+- feat(testing): add conditional type check utils (#2864)
+- fix(node/tls): implement secureConnect event (#2926)
+
+### 0.166.0 / 2022.11.24
+
+- BREAKING(fmt/bytes): rename prettyBytes to format (#2896)
+- BREAKING(fmt/duration): rename prettyDuration to format (#2871)
+- feat(http/cookie): allow number type for expires param (#2932)
+- feat(node): export `process.argv` (#2924)
+- feat(node/crypto): add hmac implementation (#2664)
+- feat: Add process._kill and shim process.kill(pid, 0) correctly (#2922)
+- fix(fmt/bytes): default local decimal and group symbols (#2904)
+- fix(http/cookie): wording for cookie value validation error (#2931)
+- fix(node/console): update export members of console (#2927)
+- fix(node/fs): enable type narrowing with instanceof for ReadStream and
+  WriteStream (#2915)
+- fix(node/http): allow setting statusMessage (#2911)
+- fix(node/http): disable chunked request if Content-Length header is specified
+  (#2755)
+- fix(node/http): request with headers (#2898)
+- fix(node/string_decoder): proper buffer type casting and fix default logic
+  (#2897)
+- fix(node/timers): implement timeout.refresh (#2919)
+- fix: wait for denoflate wasm to load (#2923)
+
+### 0.165.0 / 2022.11.16
+
+- fix(node): improve crypto.getHashes compatibility (#2890)
+- fix(node): issues with browser (#2892)
+- fix: allow creating http.IncomingRequest without url being set (#2893)
+
+### 0.164.0 / 2022.11.13
+
+- feat(fmt): add `prettyDuration` (#2861)
+- feat(http/file_server): add -v, --version option (#2868)
+- fix(node/fs): improve fs.read compatibility (#2880)
+- fix(node/http): add .finished property to ServerResponse (#2878)
+- fix(node/http): fix non-string buffer response (#2863)
+- node: mock ClientRequest.setTimeout (#2875)
+- perf(node/string_decoder): use native decoder for GenericDecoder (#2858)
+
+### 0.163.0 / 2022.11.08
+
+- chore: upgrade rust to 0.165.0 and wasmbuild to 0.10.2 (#2850)
+- chore(semver): rename inc and diff (#2826)
+- docs(encoding): remove `await` (#2831)
+- docs(encoding): remove `ColumnDetails["fn"]` (#2840)
+- docs(flags): fix broken link to minimist (#2842)
+- docs(fs): remove misleading docs from fs.walk (#2836)
+- docs(log): add note for module authors (#2843)
+- refactor: cleanup check licence headers tool (#2830)
+- refactor(_tools): use `fs/walk` in deprecations check (#2837)
+- refactor(_util): remove `deepAssign` (#2847)
+- refactor(crypto): move `crypto/_wasm_crypto/` to `crypto/_wasm/` (#2845)
+- refactor(encoding): move `varint/_wasm_varint/` to `varint/_wasm/` (#2844)
+
+### 0.162.0 / 2022.11.03
+
+- feat(encoding/front_matter): add support for different formats of front matter
+  (#2801)
+- feat(streams): add ByteSliceStream (#2795)
+- feat(tools): add import path check in docs (#2820)
+- fix(dotenv): Empty string crashing parsing (#2819)
+- fix(flags): set boolean aliases to false by default (#2824)
+- fix(node): `node:setup` task honours `-y` flag (#2825)
+- fix(node/fs): add support for numeric flags in `fs.open()` (#2828)
+
+### 0.161.0 / 2022.10.26
+
+- BREAKING: remove deprecated `std/hash` module (#2786)
+- feat(crypto): `createHash` utility (#2805)
+- feat(crypto): `toHashString` utility (#2767)
+- feat(node): add support of .node module (#2804)
+- feat(node): list remaining Node tests in documentation (#2787)
+- fix(fs/expandGlob): globstar false does not take effect (#2571) (#2779)
+- fix(node/fs): enable to check error thrown on invalid values of bufferSize
+  (#2782)
+- fix(node/net): modify close event timing (#2793)
+
+### 0.160.0 / 2022.10.17
+
+- feat(crypto): export algorithm types (#2759)
+- feat(node): add readline/promises (#2760)
+- fix(node/child_process): add support of windowsVerbatimArguments option
+  (#2781)
+- fix(node/child_process): mock childProcess.disconnect method (#2776)
+- fix(node/fs): make fs.access resolve on windows (#2775)
+- fix(node/fs): resolve `Dirent` instead of Object (#2753)
+
+### 0.159.0 / 2022.10.06
+
+- BREAKING: deprecate `std/textproto` (#2737)
+- feat(collections): improve types of `partition` module (#2744)
+- feat(http/file_server): add `showIndex` option to serveDir (#2738)
+- feat(node): new child_process.fork (#2700)
+- feat(node/crypto): add base64url encoding to hash.digest() (#2740)
+- feat(node/fs): Support more File system flags (#2725)
+- fix(http): remove unnecessary delay when closing server (#2732)
+- fix(http/file_server): handles path with reserved char (#2675)
+- fix(node): debuglog callback should be optional (#2734)
+- fix(node): handle inherited output in spawnSync() (#2743)
+- fix(node/fs): Enable `test-fs-open.js` (#2715)
+- fix(node/process): Deno 1.26 replaced Deno.setRaw with Deno.stdin.setRaw
+  (#2710)
+- fix(node/process): do not error assigning `false` to `process.env[VAR_NAME]`
+  (#2716)
+- fix(node/tls): fix TLSSocket constructor (#2749)
+- fix(node/tls): set tlssocket._handle._parentWrap (#2750)
+- fix(node/url): enable url.format function to handle a url object (#2747)
+- fix(streams): don't use shared buffer for iterateReader outputs (#2735)
+- perf(streams): memory optimizations by avoiding large buffer allocation in a
+  loop (#2748)
+
 ### 0.158.0 / 2022.09.28
 
 - feat(node): add child_process.exec() (#2684)

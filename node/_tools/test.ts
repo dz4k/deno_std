@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import { magenta } from "../../fmt/colors.ts";
 import { dirname, fromFileUrl, join } from "../../path/mod.ts";
 import { fail } from "../../testing/asserts.ts";
@@ -61,7 +61,7 @@ for await (const path of testPaths) {
         "-A",
         "--quiet",
         "--unstable",
-        "--no-check",
+        "--unsafely-ignore-certificate-errors",
         "--v8-flags=" + v8Flags.join(),
         targetTestPath.endsWith(".mjs")
           ? "--import-map=" + importMap
@@ -71,13 +71,14 @@ for await (const path of testPaths) {
 
       // Pipe stdout in order to output each test result as Deno.test output
       // That way the tests will respect the `--quiet` option when provided
-      const { code, stdout, stderr } = await Deno.spawn(Deno.execPath(), {
+      const command = new Deno.Command(Deno.execPath(), {
         args,
         env: {
           DENO_NODE_COMPAT_URL: stdRootUrl,
         },
         cwd,
       });
+      const { code, stdout, stderr } = await command.output();
 
       const decodedStderr = decoder.decode(stderr);
       if (stderr.length) console.error(decodedStderr);

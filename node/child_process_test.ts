@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 import {
   assert,
@@ -6,6 +6,7 @@ import {
   assertExists,
   assertNotStrictEquals,
   assertStrictEquals,
+  assertStringIncludes,
 } from "../testing/asserts.ts";
 import CP from "./child_process.ts";
 import { Deferred, deferred } from "../async/deferred.ts";
@@ -14,7 +15,7 @@ import * as path from "../path/mod.ts";
 import { Buffer } from "./buffer.ts";
 import { ERR_CHILD_PROCESS_STDIO_MAXBUFFER } from "./internal/errors.ts";
 
-const { spawn, execFile, ChildProcess } = CP;
+const { spawn, execFile, execFileSync, ChildProcess } = CP;
 
 function withTimeout<T>(timeoutInMS: number): Deferred<T> {
   const promise = deferred<T>();
@@ -52,6 +53,24 @@ Deno.test("[node/child_process spawn] The 'exit' event is emitted with an exit c
     await promise;
     assertStrictEquals(exitCode, 0);
     assertStrictEquals(childProcess.exitCode, exitCode);
+  } finally {
+    childProcess.kill();
+    childProcess.stdout?.destroy();
+    childProcess.stderr?.destroy();
+  }
+});
+
+Deno.test("[node/child_process disconnect] the method exists", async () => {
+  const promise = withTimeout(1000);
+  const childProcess = spawn(Deno.execPath(), ["--help"], {
+    env: { NO_COLOR: "true" },
+  });
+  try {
+    childProcess.disconnect();
+    childProcess.on("exit", () => {
+      promise.resolve();
+    });
+    await promise;
   } finally {
     childProcess.kill();
     childProcess.stdout?.destroy();
@@ -171,53 +190,6 @@ Deno.test({
 /* Start of ported part */ 3;
 // Copyright Joyent and Node contributors. All rights reserved. MIT license.
 // Ported from Node 15.5.1
-
-// TODO(uki00a): Remove this case once Node's `parallel/test-child-process-spawn-event.js` works.
-Deno.test("[child_process spawn] 'spawn' event", async () => {
-  const timeout = withTimeout(3000);
-  const subprocess = spawn(Deno.execPath(), ["eval", "console.log('ok')"]);
-
-  let didSpawn = false;
-  subprocess.on("spawn", function () {
-    didSpawn = true;
-  });
-
-  function mustNotBeCalled() {
-    timeout.reject(new Error("function should not have been called"));
-  }
-
-  const promises = [] as Promise<void>[];
-  function mustBeCalledAfterSpawn() {
-    const promise = deferred<void>();
-    promises.push(promise);
-    return () => {
-      if (didSpawn) {
-        promise.resolve();
-      } else {
-        promise.reject(
-          new Error("function should be called after the 'spawn' event"),
-        );
-      }
-    };
-  }
-
-  subprocess.on("error", mustNotBeCalled);
-  subprocess.stdout!.on("data", mustBeCalledAfterSpawn());
-  subprocess.stdout!.on("end", mustBeCalledAfterSpawn());
-  subprocess.stdout!.on("close", mustBeCalledAfterSpawn());
-  subprocess.stderr!.on("data", mustNotBeCalled);
-  subprocess.stderr!.on("end", mustBeCalledAfterSpawn());
-  subprocess.stderr!.on("close", mustBeCalledAfterSpawn());
-  subprocess.on("exit", mustBeCalledAfterSpawn());
-  subprocess.on("close", mustBeCalledAfterSpawn());
-
-  try {
-    await Promise.race([Promise.all(promises), timeout]);
-    timeout.resolve();
-  } finally {
-    subprocess.kill();
-  }
-});
 
 // TODO(uki00a): Remove this case once Node's `parallel/test-child-process-spawn-shell.js` works.
 Deno.test("[child_process spawn] Verify that a shell is executed", async () => {
@@ -524,7 +496,7 @@ Deno.test({
     const p = deferred();
     const cp = CP.fork(script, [], { cwd: testdataDir, stdio: "pipe" });
     let output = "";
-    cp.on("exit", () => p.resolve());
+    cp.on("close", () => p.resolve());
     cp.stdout?.on("data", (data) => {
       output += data;
     });
@@ -532,3 +504,28 @@ Deno.test({
     assertEquals(output, "foo\ntrue\ntrue\ntrue\n");
   },
 });
+
+Deno.test("[node/child_process execFileSync] 'inherit' stdout and stderr", () => {
+  execFileSync(Deno.execPath(), ["--help"], { stdio: "inherit" });
+});
+
+Deno.test(
+  "[node/child_process spawn] supports windowsVerbatimArguments option",
+  { ignore: Deno.build.os !== "windows" },
+  async () => {
+    const cmdFinished = deferred();
+    let output = "";
+    const cp = spawn("cmd", ["/d", "/s", "/c", '"deno ^"--version^""'], {
+      stdio: "pipe",
+      windowsVerbatimArguments: true,
+    });
+    cp.on("close", () => cmdFinished.resolve());
+    cp.stdout?.on("data", (data) => {
+      output += data;
+    });
+    await cmdFinished;
+    assertStringIncludes(output, "deno");
+    assertStringIncludes(output, "v8");
+    assertStringIncludes(output, "typescript");
+  },
+);

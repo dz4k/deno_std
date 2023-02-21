@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import { basename } from "../path.ts";
 import { EventEmitter } from "../events.ts";
 import { notImplemented } from "../_utils.ts";
@@ -8,7 +8,7 @@ import { validateFunction } from "../internal/validators.mjs";
 import { stat, Stats } from "./_fs_stat.ts";
 import { Stats as StatsClass } from "../internal/fs/utils.mjs";
 import { Buffer } from "../buffer.ts";
-import { delay } from "../../async/delay.ts";
+import { delay } from "../_util/async.ts";
 
 const statPromisified = promisify(stat);
 const statAsync = async (filename: string): Promise<Stats | null> => {

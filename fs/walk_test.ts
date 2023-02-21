@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 // deno-lint-ignore-file no-explicit-any
 import { walk, WalkEntry, WalkOptions, walkSync } from "./walk.ts";
 import {
@@ -344,7 +344,8 @@ testWalk(
 
 testWalk(
   async (d: string) => {
-    await Deno.spawn("mkfifo", { args: [d + "/fifo"] });
+    const command = new Deno.Command("mkfifo", { args: [d + "/fifo"] });
+    await command.output();
   },
   async function fifo() {
     assertReady(2);

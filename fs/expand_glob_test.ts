@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import {
   assert,
   assertEquals,
@@ -46,7 +46,6 @@ const EG_OPTIONS: ExpandGlobOptions = {
   root: fromFileUrl(new URL(join("testdata", "glob"), import.meta.url)),
   includeDirs: true,
   extended: false,
-  globstar: false,
 };
 
 Deno.test("expandGlobWildcard", async function () {
@@ -97,9 +96,9 @@ Deno.test("expandGlobExt", async function () {
 });
 
 Deno.test("expandGlobGlobstar", async function () {
-  const options = { ...EG_OPTIONS, globstar: true };
+  const options = { ...EG_OPTIONS };
   assertEquals(
-    await expandGlobArray(joinGlobs(["**", "abc"], options), options),
+    await expandGlobArray("**/abc", options),
     ["abc", join("subdir", "abc")],
   );
 });
@@ -112,6 +111,18 @@ Deno.test("expandGlobGlobstarParent", async function () {
   );
 });
 
+Deno.test("expandGlobGlobstarFalseWithGlob", async function () {
+  const options = { ...EG_OPTIONS, globstar: false };
+  assertEquals(await expandGlobArray("**", options), [
+    ".",
+    "a[b]c",
+    "abc",
+    "abcdef",
+    "abcdefghi",
+    "subdir",
+  ]);
+});
+
 Deno.test("expandGlobIncludeDirs", async function () {
   const options = { ...EG_OPTIONS, includeDirs: false };
   assertEquals(await expandGlobArray("subdir", options), []);
@@ -119,14 +130,10 @@ Deno.test("expandGlobIncludeDirs", async function () {
 
 Deno.test("expandGlobPermError", async function () {
   const exampleUrl = new URL("testdata/expand_wildcard.js", import.meta.url);
-  const { code, success, stdout, stderr } = await Deno.spawn(Deno.execPath(), {
-    args: [
-      "run",
-      "--quiet",
-      "--unstable",
-      exampleUrl.toString(),
-    ],
+  const command = new Deno.Command(Deno.execPath(), {
+    args: ["run", "--quiet", "--unstable", exampleUrl.toString()],
   });
+  const { code, success, stdout, stderr } = await command.output();
   const decoder = new TextDecoder();
   assert(!success);
   assertEquals(code, 1);

@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import { serve } from "../http/server.ts";
 import { assertStrictEquals } from "../testing/asserts.ts";
 import { dirname, fromFileUrl } from "../path/mod.ts";
@@ -14,7 +14,7 @@ Deno.test({
       { signal: abortController.signal, port: 8081 },
     );
     const decoder = new TextDecoder();
-    const { stdout } = await Deno.spawn(Deno.execPath(), {
+    const command = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "--quiet",
@@ -24,6 +24,7 @@ Deno.test({
       ],
       cwd: moduleDir,
     });
+    const { stdout } = await command.output();
 
     try {
       const actual = decoder.decode(stdout).trim();

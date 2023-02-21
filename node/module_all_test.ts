@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 import { assertEquals } from "../testing/asserts.ts";
 import moduleAll from "./module_all.ts";
@@ -16,7 +16,7 @@ import * as buffer from "./buffer.ts";
 import * as childProcess from "./child_process.ts";
 import * as cluster from "./cluster.ts";
 import * as console from "./console.ts";
-import * as constants from "./constants.ts";
+import * as _constants from "./constants.ts";
 import * as crypto from "./crypto.ts";
 import * as dgram from "./dgram.ts";
 import * as diagnosticsChannel from "./diagnostics_channel.ts";
@@ -31,6 +31,7 @@ import * as http from "./http.ts";
 import * as http2 from "./http2.ts";
 import * as https from "./https.ts";
 import * as inspector from "./inspector.ts";
+import * as internalCp from "./internal/child_process.ts";
 import * as internalCryptoCertificate from "./internal/crypto/certificate.ts";
 import * as internalCryptoCipher from "./internal/crypto/cipher.ts";
 import * as internalCryptoDiffiehellman from "./internal/crypto/diffiehellman.ts";
@@ -68,6 +69,7 @@ import * as perfHooks from "./perf_hooks.ts";
 import * as punycode from "./punycode.ts";
 import * as querystring from "./querystring.ts";
 import * as readline from "./readline.ts";
+import * as readlinePromises from "./readline/promises.ts";
 import * as repl from "./repl.ts";
 // TODO(kt3k): enable this
 // import * as stream from "./stream.ts";
@@ -104,7 +106,9 @@ Deno.test("modules", () => {
   assertEquals(keys(moduleAll.child_process), keys(childProcess));
   assertEquals(keys(moduleAll.cluster), keys(cluster));
   assertEquals(keys(moduleAll.console), keys(console));
-  assertEquals(keys(moduleAll.constants), keys(constants));
+  // Note: We don't check for constants module as they vary on platform,
+  // and it's difficult to pass this check with all platforms.
+  // assertEquals(keys(moduleAll.constants), keys(constants));
   assertEquals(keys(moduleAll.crypto), keys(crypto));
   assertEquals(keys(moduleAll.dgram), keys(dgram));
   assertEquals(keys(moduleAll.diagnostics_channel), keys(diagnosticsChannel));
@@ -119,6 +123,10 @@ Deno.test("modules", () => {
   assertEquals(keys(moduleAll.http2), keys(http2));
   assertEquals(keys(moduleAll.https), keys(https));
   assertEquals(keys(moduleAll.inspector), keys(inspector));
+  assertEquals(
+    keys(moduleAll["internal/child_process"]),
+    keys(internalCp),
+  );
   assertEquals(
     keys(moduleAll["internal/crypto/certificate"]),
     keys(internalCryptoCertificate),
@@ -220,6 +228,7 @@ Deno.test("modules", () => {
   assertEquals(keys(moduleAll.punycode), keys(punycode));
   assertEquals(keys(moduleAll.querystring), keys(querystring));
   assertEquals(keys(moduleAll.readline), keys(readline));
+  assertEquals(keys(moduleAll["readline/promises"]), keys(readlinePromises));
   assertEquals(keys(moduleAll.repl), keys(repl));
   // TODO(kt3k): enable this check
   // assertEquals(keys(moduleAll.stream), keys(stream));
@@ -240,6 +249,20 @@ Deno.test("modules", () => {
   assertEquals(keys(moduleAll.wasi), keys(wasi));
   assertEquals(keys(moduleAll.worker_threads), keys(workerThreads));
   assertEquals(keys(moduleAll.zlib), keys(zlib));
+});
+
+Deno.test("modules can be imported without any permission", async () => {
+  const { code, stderr } = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "module_all.ts",
+    ],
+    cwd: path.dirname(path.fromFileUrl(import.meta.url)),
+  }).output();
+  if (stderr.length > 0) {
+    console.log(new TextDecoder().decode(stderr));
+  }
+  assertEquals(code, 0);
 });
 
 // deno-lint-ignore no-explicit-any

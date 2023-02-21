@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import { Buffer } from "./buffer.ts";
 import { encodeStr, hexTable } from "./internal/querystring.ts";
 
@@ -40,6 +40,18 @@ export const escape = qsEscape;
 
 export interface ParsedUrlQuery {
   [key: string]: string | string[] | undefined;
+}
+
+export interface ParsedUrlQueryInput {
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | ReadonlyArray<string>
+    | ReadonlyArray<number>
+    | ReadonlyArray<boolean>
+    | null
+    | undefined;
 }
 
 interface ParseOptions {
@@ -130,8 +142,8 @@ export function parse(
     return obj;
   }
 
-  const sepCodes = (!sep ? [38] /* & */ : charCodes(String(sep)));
-  const eqCodes = (!eq ? [61] /* = */ : charCodes(String(eq)));
+  const sepCodes = !sep ? [38] /* & */ : charCodes(String(sep));
+  const eqCodes = !eq ? [61] /* = */ : charCodes(String(eq));
   const sepLen = sepCodes.length;
   const eqLen = eqCodes.length;
 
@@ -150,7 +162,7 @@ export function parse(
   if (decodeURIComponent) {
     decode = decodeURIComponent;
   }
-  const customDecode = (decode !== unescape);
+  const customDecode = decode !== unescape;
 
   let lastPos = 0;
   let sepIdx = 0;
@@ -159,7 +171,7 @@ export function parse(
   let value = "";
   let keyEncoded = customDecode;
   let valEncoded = customDecode;
-  const plusChar = (customDecode ? "%20" : " ");
+  const plusChar = customDecode ? "%20" : " ";
   let encodeCheck = 0;
   for (let i = 0; i < str.length; ++i) {
     const code = str.charCodeAt(i);

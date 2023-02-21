@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -25,19 +25,19 @@
 // - https://github.com/nodejs/node/blob/master/src/pipe_wrap.h
 
 import { notImplemented } from "../_utils.ts";
-import { unreachable } from "../../testing/asserts.ts";
+import { unreachable } from "../_util/asserts.ts";
 import { ConnectionWrap } from "./connection_wrap.ts";
 import { AsyncWrap, providerType } from "./async_wrap.ts";
 import { LibuvStreamWrap } from "./stream_wrap.ts";
 import { codeMap } from "./uv.ts";
-import { delay } from "../../async/mod.ts";
+import { delay } from "../_util/async.ts";
 import { kStreamBaseField } from "./stream_wrap.ts";
 import {
   ceilPowOf2,
   INITIAL_ACCEPT_BACKOFF_DELAY,
   MAX_ACCEPT_BACKOFF_DELAY,
 } from "./_listen.ts";
-import { isWindows } from "../../_util/os.ts";
+import { isWindows } from "../_util/os.ts";
 import { fs } from "./constants.ts";
 
 export enum socketType {
@@ -202,6 +202,8 @@ export class Pipe extends ConnectionWrap {
         return codeMap.get("EADDRINUSE")!;
       } else if (e instanceof Deno.errors.AddrNotAvailable) {
         return codeMap.get("EADDRNOTAVAIL")!;
+      } else if (e instanceof Deno.errors.PermissionDenied) {
+        throw e;
       }
 
       // TODO(cmorten): map errors to appropriate error codes.

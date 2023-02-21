@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 import { fromFileUrl, join } from "../../path/mod.ts";
 import { delay } from "../../async/delay.ts";
@@ -64,19 +64,18 @@ Deno.test("integration test of compat mode", {
   await Deno.remove(tempDir, { recursive: true });
 });
 
-type Opts = Pick<Deno.SpawnOptions, "env" | "cwd">;
+type Opts = Pick<Deno.CommandOptions, "env" | "cwd">;
 function exec(cmd: string, opts: Opts = {}) {
   const [command, ...args] = cmd.split(" ");
   return execCmd(command, args, opts);
 }
-async function execCmd(command: string, args: string[], opts: Opts) {
+async function execCmd(cmd: string, args: string[], opts: Opts) {
   console.log(`Executing the command: "${args.join(" ")}"`);
-  const { code, stdout, stderr } = await Deno.spawn(command, {
+  const command = new Deno.Command(cmd, {
     args,
-    stdout: "piped",
-    stderr: "piped",
     ...opts,
   });
+  const { code, stderr, stdout } = await command.output();
   if (code !== 0) {
     console.log(new TextDecoder().decode(stdout));
     console.log(new TextDecoder().decode(stderr));

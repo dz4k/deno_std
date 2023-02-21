@@ -1,8 +1,8 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 // Documentation and interface for walk were adapted from Go
 // https://golang.org/pkg/path/filepath/#Walk
 // Copyright 2009 The Go Authors. All rights reserved. BSD license.
-import { assert } from "../_util/assert.ts";
+import { assert } from "../_util/asserts.ts";
 import { join, normalize } from "../path/mod.ts";
 import {
   createWalkEntry,
@@ -42,9 +42,13 @@ function wrapErrorWithRootPath(err: unknown, root: string) {
 }
 
 export interface WalkOptions {
+  /** @default {Infinity} */
   maxDepth?: number;
+  /** @default {true} */
   includeFiles?: boolean;
+  /** @default {true} */
   includeDirs?: boolean;
+  /** @default {false} */
   followSymlinks?: boolean;
   exts?: string[];
   match?: RegExp[];
@@ -52,28 +56,19 @@ export interface WalkOptions {
 }
 export type { WalkEntry };
 
-/** Walks the file tree rooted at root, yielding each file or directory in the
- * tree filtered according to the given options. The files are walked in lexical
- * order, which makes the output deterministic but means that for very large
- * directories walk() can be inefficient.
+/**
+ * Walks the file tree rooted at root, yielding each file or directory in the
+ * tree filtered according to the given options.
  *
- * Options:
- * - maxDepth?: number = Infinity;
- * - includeFiles?: boolean = true;
- * - includeDirs?: boolean = true;
- * - followSymlinks?: boolean = false;
- * - exts?: string[];
- * - match?: RegExp[];
- * - skip?: RegExp[];
- *
+ * @example
  * ```ts
- *       import { walk } from "./walk.ts";
- *       import { assert } from "../testing/asserts.ts";
+ * import { walk } from "https://deno.land/std@$STD_VERSION/fs/walk.ts";
+ * import { assert } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
  *
- *       for await (const entry of walk(".")) {
- *         console.log(entry.path);
- *         assert(entry.isFile);
- *       }
+ * for await (const entry of walk(".")) {
+ *   console.log(entry.path);
+ *   assert(entry.isFile);
+ * }
  * ```
  */
 export async function* walk(

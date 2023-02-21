@@ -1,11 +1,13 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 // This module implements 'child_process' module of Node.JS API.
 // ref: https://nodejs.org/api/child_process.html
+import { core } from "./_core.ts";
 import {
   ChildProcess,
   ChildProcessOptions,
   normalizeSpawnArguments,
+  type SpawnOptions,
   spawnSync as _spawnSync,
   type SpawnSyncOptions,
   type SpawnSyncResult,
@@ -139,16 +141,13 @@ export function fork(
   options.shell = false;
 
   Object.assign(options.env ??= {}, {
-    // deno-lint-ignore no-explicit-any
-    DENO_DONT_USE_INTERNAL_NODE_COMPAT_STATE: (Deno as any).core.ops
+    DENO_DONT_USE_INTERNAL_NODE_COMPAT_STATE: core.ops
       .op_npm_process_state(),
   });
 
   return spawn(options.execPath, args, options);
 }
 
-// deno-lint-ignore no-empty-interface
-interface SpawnOptions extends ChildProcessOptions {}
 export function spawn(command: string): ChildProcess;
 export function spawn(command: string, options: SpawnOptions): ChildProcess;
 export function spawn(command: string, args: string[]): ChildProcess;
@@ -166,9 +165,12 @@ export function spawn(
   maybeOptions?: SpawnOptions,
 ): ChildProcess {
   const args = Array.isArray(argsOrOptions) ? argsOrOptions : [];
-  const options = !Array.isArray(argsOrOptions) && argsOrOptions != null
+  let options = !Array.isArray(argsOrOptions) && argsOrOptions != null
     ? argsOrOptions
-    : maybeOptions;
+    : maybeOptions as SpawnOptions;
+
+  options = normalizeSpawnArguments(command, args, options);
+
   validateAbortSignal(options?.signal, "options.signal");
   return new ChildProcess(command, args, options);
 }
@@ -641,6 +643,49 @@ export function execFile(
 
   return child;
 }
+
+type ExecFileExceptionForPromisify = ExecFileError & ExecOutputForPromisify;
+
+const customPromiseExecFileFunction = (
+  orig: (
+    file: string,
+    argsOrOptionsOrCallback?: string[] | ExecFileOptions | ExecFileCallback,
+    optionsOrCallback?: ExecFileOptions | ExecFileCallback,
+    maybeCallback?: ExecFileCallback,
+  ) => ChildProcess,
+) => {
+  return (
+    ...args: [
+      file: string,
+      argsOrOptions?: string[] | ExecFileOptions,
+      options?: ExecFileOptions,
+    ]
+  ) => {
+    const { promise, resolve, reject } = createDeferredPromise() as unknown as {
+      promise: PromiseWithChild<ExecOutputForPromisify>;
+      resolve?: (value: ExecOutputForPromisify) => void;
+      reject?: (reason?: ExecFileExceptionForPromisify) => void;
+    };
+
+    promise.child = orig(...args, (err, stdout, stderr) => {
+      if (err !== null) {
+        const _err: ExecFileExceptionForPromisify = err;
+        _err.stdout = stdout;
+        _err.stderr = stderr;
+        reject && reject(_err);
+      } else {
+        resolve && resolve({ stdout, stderr });
+      }
+    });
+
+    return promise;
+  };
+};
+
+Object.defineProperty(execFile, promisify.custom, {
+  enumerable: false,
+  value: customPromiseExecFileFunction(execFile),
+});
 
 function checkExecSyncError(
   ret: SpawnSyncResult,

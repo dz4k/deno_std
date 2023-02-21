@@ -1,6 +1,6 @@
 // Copyright 2011 The Go Authors. All rights reserved. BSD license.
 // https://github.com/golang/go/blob/master/LICENSE
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 // This module is browser compatible.
 
@@ -11,8 +11,8 @@
  * @module
  */
 
-import { assert } from "../_util/assert.ts";
-import type { ReadOptions } from "./csv/_io.ts";
+import { assert } from "../_util/asserts.ts";
+import { convertRowToObject, type ReadOptions } from "./csv/_io.ts";
 import { Parser } from "./csv/_parser.ts";
 
 export {
@@ -25,7 +25,9 @@ export {
 export type { ReadOptions } from "./csv/_io.ts";
 
 const QUOTE = '"';
-export const NEWLINE = "\r\n";
+const LF = "\n";
+const CRLF = "\r\n";
+const BYTE_ORDER_MARK = "\ufeff";
 
 export class StringifyError extends Error {
   override readonly name = "StringifyError";
@@ -40,7 +42,7 @@ function getEscapedString(value: unknown, sep: string): string {
 
   // Is regex.test more performant here? If so, how to dynamically create?
   // https://stackoverflow.com/questions/3561493/
-  if (str.includes(sep) || str.includes(NEWLINE) || str.includes(QUOTE)) {
+  if (str.includes(sep) || str.includes(LF) || str.includes(QUOTE)) {
     return `${QUOTE}${str.replaceAll(QUOTE, `${QUOTE}${QUOTE}`)}${QUOTE}`;
   }
 
@@ -60,6 +62,70 @@ export type ColumnDetails = {
   prop: PropertyAccessor | PropertyAccessor[];
 };
 
+/**
+ * The most essential aspect of a column is accessing the property holding the
+ * data for that column on each object in the data array. If that member is at
+ * the top level, `Column` can simply be a property accessor, which is either a
+ * `string` (if it's a plain object) or a `number` (if it's an array).
+ *
+ * ```ts
+ * const columns = [
+ *   "name",
+ * ];
+ * ```
+ *
+ * Each property accessor will be used as the header for the column:
+ *
+ * | name |
+ * | :--: |
+ * | Deno |
+ *
+ * - If the required data is not at the top level (it's nested in other
+ *   objects/arrays), then a simple property accessor won't work, so an array of
+ *   them will be required.
+ *
+ *   ```ts
+ *   const columns = [
+ *     ["repo", "name"],
+ *     ["repo", "org"],
+ *   ];
+ *   ```
+ *
+ *   When using arrays of property accessors, the header names inherit the value
+ *   of the last accessor in each array:
+ *
+ *   | name |   org    |
+ *   | :--: | :------: |
+ *   | deno | denoland |
+ *
+ *  - If a different column header is desired, then a `ColumnDetails` object type
+ *     can be used for each column:
+ *
+ *   - **`header?: string`** is the optional value to use for the column header
+ *     name
+ *
+ *   - **`prop: PropertyAccessor | PropertyAccessor[]`** is the property accessor
+ *     (`string` or `number`) or array of property accessors used to access the
+ *     data on each object
+ *
+ *   ```ts
+ *   const columns = [
+ *     "name",
+ *     {
+ *       prop: ["runsOn", 0],
+ *       header: "language 1",
+ *     },
+ *     {
+ *       prop: ["runsOn", 1],
+ *       header: "language 2",
+ *     },
+ *   ];
+ *   ```
+ *
+ *   | name | language 1 | language 2 |
+ *   | :--: | :--------: | :--------: |
+ *   | Deno |    Rust    | TypeScript |
+ */
 export type Column = ColumnDetails | PropertyAccessor | PropertyAccessor[];
 
 type NormalizedColumn = Omit<ColumnDetails, "header" | "prop"> & {
@@ -138,31 +204,106 @@ function getValuesFromItem(
   return values;
 }
 
-/**
- * @param headers Whether or not to include the row of headers.
- * Default: `true`
- *
- * @param separator Delimiter used to separate values. Examples:
- *  - `","` _comma_ (Default)
- *  - `"\t"` _tab_
- *  - `"|"` _pipe_
- *  - etc.
- */
 export type StringifyOptions = {
+  /** Whether to include the row of headers or not.
+   *
+   * @default {true}
+   */
   headers?: boolean;
+  /**
+   * Delimiter used to separate values. Examples:
+   *  - `","` _comma_
+   *  - `"\t"` _tab_
+   *  - `"|"` _pipe_
+   *  - etc.
+   *
+   *  @default {","}
+   */
   separator?: string;
+  /**
+   * a list of instructions for how to target and transform the data for each
+   * column of output. This is also where you can provide an explicit header
+   * name for the column.
+   */
   columns?: Column[];
+  /**
+   * Whether to add a
+   * [byte-order mark](https://en.wikipedia.org/wiki/Byte_order_mark) to the
+   * beginning of the file content. Required by software such as MS Excel to
+   * properly display Unicode text.
+   *
+   * @default {false}
+   */
+  bom?: boolean;
 };
 
 /**
- * @param data The array of objects to encode
+ * @param data The source data to stringify. It's an array of items which are
+ * plain objects or arrays.
+ *
+ * `DataItem: Record<string, unknown> | unknown[]`
+ *
+ * ```ts
+ * const data = [
+ *   {
+ *     name: "Deno",
+ *     repo: { org: "denoland", name: "deno" },
+ *     runsOn: ["Rust", "TypeScript"],
+ *   },
+ * ];
+ * ```
+ *
+ * @example
+ * ```ts
+ * import {
+ *   Column,
+ *   stringify,
+ * } from "https://deno.land/std@$STD_VERSION/encoding/csv.ts";
+ *
+ * type Character = {
+ *   age: number;
+ *   name: {
+ *     first: string;
+ *     last: string;
+ *   };
+ * };
+ *
+ * const data: Character[] = [
+ *   {
+ *     age: 70,
+ *     name: {
+ *       first: "Rick",
+ *       last: "Sanchez",
+ *     },
+ *   },
+ *   {
+ *     age: 14,
+ *     name: {
+ *       first: "Morty",
+ *       last: "Smith",
+ *     },
+ *   },
+ * ];
+ *
+ * let columns: Column[] = [
+ *   ["name", "first"],
+ *   "age",
+ * ];
+ *
+ * console.log(stringify(data, { columns }));
+ * // first,age
+ * // Rick,70
+ * // Morty,14
+ * ```
+ *
  * @param options Output formatting options
  */
 export function stringify(
   data: DataItem[],
-  { headers = true, separator: sep = ",", columns = [] }: StringifyOptions = {},
+  { headers = true, separator: sep = ",", columns = [], bom = false }:
+    StringifyOptions = {},
 ): string {
-  if (sep.includes(QUOTE) || sep.includes(NEWLINE)) {
+  if (sep.includes(QUOTE) || sep.includes(CRLF)) {
     const message = [
       "Separator cannot include the following strings:",
       '  - U+0022: Quotation mark (")',
@@ -174,11 +315,15 @@ export function stringify(
   const normalizedColumns = columns.map(normalizeColumn);
   let output = "";
 
+  if (bom) {
+    output += BYTE_ORDER_MARK;
+  }
+
   if (headers) {
     output += normalizedColumns
       .map((column) => getEscapedString(column.header, sep))
       .join(sep);
-    output += NEWLINE;
+    output += CRLF;
   }
 
   for (const item of data) {
@@ -186,7 +331,7 @@ export function stringify(
     output += values
       .map((value) => getEscapedString(value, sep))
       .join(sep);
-    output += NEWLINE;
+    output += CRLF;
   }
 
   return output;
@@ -194,20 +339,35 @@ export function stringify(
 
 export interface ParseOptions extends ReadOptions {
   /**
-   * If you provide `skipFirstRow: true` and `columns`, the first line will be skipped.
-   * If you provide `skipFirstRow: true` but not `columns`, the first line will be skipped and used as header definitions.
+   * If you provide `skipFirstRow: true` and `columns`, the first line will be
+   * skipped.
+   * If you provide `skipFirstRow: true` but not `columns`, the first line will
+   * be skipped and used as header definitions.
    */
   skipFirstRow?: boolean;
 
-  /**
-   * If you provide `string[]` or `ColumnOptions[]`, those names will be used for header definition.
-   */
+  /** List of names used for header definition. */
   columns?: string[];
 }
 
 /**
  * Csv parse helper to manipulate data.
  * Provides an auto/custom mapper for columns.
+ *
+ * @example
+ * ```ts
+ * import { parse } from "https://deno.land/std@$STD_VERSION/encoding/csv.ts";
+ * const string = "a,b,c\nd,e,f";
+ *
+ * console.log(
+ *   await parse(string, {
+ *     skipFirstRow: false,
+ *   }),
+ * );
+ * // output:
+ * // [["a", "b", "c"], ["d", "e", "f"]]
+ * ```
+ *
  * @param input Input to parse.
  * @param opt options of the parser.
  * @returns If you don't provide `opt.skipFirstRow` and `opt.columns`, it returns `string[][]`.
@@ -247,31 +407,20 @@ export function parse(
 
   if (opt.skipFirstRow || opt.columns) {
     let headers: string[] = [];
-    let i = 0;
 
     if (opt.skipFirstRow) {
       const head = r.shift();
       assert(head != null);
       headers = head;
-      i++;
     }
 
     if (opt.columns) {
       headers = opt.columns;
     }
 
-    return r.map((e) => {
-      if (e.length !== headers.length) {
-        throw new Error(
-          `Error number of fields line: ${i}\nNumber of fields found: ${headers.length}\nExpected number of fields: ${e.length}`,
-        );
-      }
-      i++;
-      const out: Record<string, unknown> = {};
-      for (let j = 0; j < e.length; j++) {
-        out[headers[j]] = e[j];
-      }
-      return out;
+    const firstLineIndex = opt.skipFirstRow ? 1 : 0;
+    return r.map((row, i) => {
+      return convertRowToObject(row, headers, firstLineIndex + i);
     });
   }
   return r;

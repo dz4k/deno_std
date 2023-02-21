@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -30,7 +30,7 @@ import { codeMap } from "./uv.ts";
 import { AsyncWrap, providerType } from "./async_wrap.ts";
 import { ares_strerror } from "./ares.ts";
 import { notImplemented } from "../_utils.ts";
-import { isWindows } from "../../_util/os.ts";
+import { isWindows } from "../_util/os.ts";
 
 interface LookupAddress {
   address: string;

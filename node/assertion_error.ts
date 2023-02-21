@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 // Adapted from Node.js. Copyright Joyent, Inc. and other Node contributors.
 
@@ -22,11 +22,11 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import { inspect } from "./util.ts";
-import { stripColor as removeColors } from "../fmt/colors.ts";
+import { stripColor as removeColors } from "./_util/strip_color.ts";
 
 function getConsoleWidth(): number {
   try {
-    return Deno.consoleSize(Deno.stderr.rid).columns;
+    return Deno.consoleSize().columns;
   } catch {
     return 80;
   }
@@ -547,7 +547,7 @@ export class AssertionError extends Error {
 
     for (const name of ["actual", "expected"]) {
       if (typeof this[name] === "string") {
-        const value = (this[name] as string);
+        const value = this[name] as string;
         const lines = value.split("\n");
         if (lines.length > 10) {
           lines.length = 10;

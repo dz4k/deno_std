@@ -1,22 +1,22 @@
 #!/usr/bin/env -S deno run --allow-net --allow-read
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 // This program serves files in the current directory over HTTP.
 // TODO(bartlomieju): Add tests like these:
 // https://github.com/indexzero/http-server/blob/master/test/http-server-test.js
 
 import { extname, posix } from "../path/mod.ts";
-import { encode } from "../encoding/hex.ts";
-import { contentType } from "../media_types/mod.ts";
+import { contentType } from "../media_types/content_type.ts";
 import { serve, serveTls } from "./server.ts";
-import { Status, STATUS_TEXT } from "./http_status.ts";
+import { Status } from "./http_status.ts";
 import { parse } from "../flags/mod.ts";
-import { assert } from "../_util/assert.ts";
+import { assert } from "../_util/asserts.ts";
 import { red } from "../fmt/colors.ts";
-import { compareEtag } from "./util.ts";
-
-const DEFAULT_CHUNK_SIZE = 16_640;
-
+import { compareEtag, createCommonResponse } from "./util.ts";
+import { DigestAlgorithm } from "../crypto/crypto.ts";
+import { toHashString } from "../crypto/to_hash_string.ts";
+import { createHash } from "../crypto/_util.ts";
+import { VERSION } from "../version.ts";
 interface EntryInfo {
   mode: string;
   size: string;
@@ -25,42 +25,17 @@ interface EntryInfo {
 }
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
-// The fnv-1a hash function.
-function fnv1a(buf: string): string {
-  let hash = 2166136261; // 32-bit FNV offset basis
-  for (let i = 0; i < buf.length; i++) {
-    hash ^= buf.charCodeAt(i);
-    // Equivalent to `hash *= 16777619` without using BigInt
-    // 32-bit FNV prime
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) +
-      (hash << 24);
-  }
-  // 32-bit hex string
-  return (hash >>> 0).toString(16);
-}
-
-/** Algorithm used to determine etag */
-export type EtagAlgorithm =
-  | "fnv1a"
-  | "sha-1"
-  | "sha-256"
-  | "sha-384"
-  | "sha-512";
-
-// Generates a hash for the provided string
-async function createEtagHash(
-  message: string,
-  algorithm: EtagAlgorithm = "fnv1a",
-): Promise<string> {
-  if (algorithm === "fnv1a") {
-    return fnv1a(message);
-  }
-  const msgUint8 = encoder.encode(message);
-  const hashBuffer = await crypto.subtle.digest(algorithm, msgUint8);
-  return decoder.decode(encode(new Uint8Array(hashBuffer)));
-}
+// avoid top-lebvel-await
+const envPermissionStatus =
+  Deno.permissions.querySync?.({ name: "env", variable: "DENO_DEPLOYMENT_ID" })
+    .state ?? "granted"; // for deno deploy
+const DENO_DEPLOYMENT_ID = envPermissionStatus === "granted"
+  ? Deno.env.get("DENO_DEPLOYMENT_ID")
+  : undefined;
+const hashedDenoDeploymentId = DENO_DEPLOYMENT_ID
+  ? createHash("FNV32A", DENO_DEPLOYMENT_ID).then((hash) => toHashString(hash))
+  : undefined;
 
 function modeToString(isDir: boolean, maybeMode: number | null): string {
   const modeMap = ["---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"];
@@ -103,8 +78,11 @@ function fileLenToString(len: number): string {
 
 /** Interface for serveFile options. */
 export interface ServeFileOptions {
-  /** The algorithm to use for generating the ETag. Defaults to "fnv1a". */
-  etagAlgorithm?: EtagAlgorithm;
+  /** The algorithm to use for generating the ETag.
+   *
+   * @default {"fnv1a"}
+   */
+  etagAlgorithm?: DigestAlgorithm;
   /** An optional FileInfo object returned by Deno.stat. It is used for optimization purposes. */
   fileInfo?: Deno.FileInfo;
 }
@@ -113,10 +91,6 @@ export interface ServeFileOptions {
  * Returns an HTTP Response with the requested file as the body.
  * @param req The server request context used to cleanup the file handle.
  * @param filePath Path of the file to serve.
- * @param options
- * @param options.etagAlgorithm The algorithm to use for generating the ETag. Defaults to "fnv1a".
- * @param options.fileInfo An optional FileInfo object returned by Deno.stat. It is used
- * for optimization purposes.
  */
 export async function serveFile(
   req: Request,
@@ -128,12 +102,7 @@ export async function serveFile(
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) {
       await req.body?.cancel();
-      const status = Status.NotFound;
-      const statusText = STATUS_TEXT[status];
-      return new Response(statusText, {
-        status,
-        statusText,
-      });
+      return createCommonResponse(Status.NotFound);
     } else {
       throw error;
     }
@@ -141,9 +110,7 @@ export async function serveFile(
 
   if (fileInfo.isDirectory) {
     await req.body?.cancel();
-    const status = Status.NotFound;
-    const statusText = STATUS_TEXT[status];
-    return new Response(statusText, { status, statusText });
+    return createCommonResponse(Status.NotFound);
   }
 
   const file = await Deno.open(filePath);
@@ -162,39 +129,40 @@ export async function serveFile(
     headers.set("date", date.toUTCString());
   }
 
+  // Create a simple etag that is an md5 of the last modified date and filesize concatenated
+  const etag = fileInfo.mtime
+    ? toHashString(
+      await createHash(
+        etagAlgorithm ?? "FNV32A",
+        `${fileInfo.mtime.toJSON()}${fileInfo.size}`,
+      ),
+    )
+    : await hashedDenoDeploymentId;
+
   // Set last modified header if last modification timestamp is available
-  if (fileInfo.mtime instanceof Date) {
-    const lastModified = new Date(fileInfo.mtime);
-    headers.set("last-modified", lastModified.toUTCString());
+  if (fileInfo.mtime) {
+    headers.set("last-modified", fileInfo.mtime.toUTCString());
+  }
+  if (etag) {
+    headers.set("etag", etag);
+  }
 
-    // Create a simple etag that is an md5 of the last modified date and filesize concatenated
-    const simpleEtag = await createEtagHash(
-      `${lastModified.toJSON()}${fileInfo.size}`,
-      etagAlgorithm || "fnv1a",
-    );
-    headers.set("etag", simpleEtag);
-
+  if (etag || fileInfo.mtime) {
     // If a `if-none-match` header is present and the value matches the tag or
     // if a `if-modified-since` header is present and the value is bigger than
     // the access timestamp value, then return 304
     const ifNoneMatch = req.headers.get("if-none-match");
     const ifModifiedSince = req.headers.get("if-modified-since");
     if (
-      (ifNoneMatch && compareEtag(ifNoneMatch, simpleEtag)) ||
+      (etag && ifNoneMatch && compareEtag(ifNoneMatch, etag)) ||
       (ifNoneMatch === null &&
+        fileInfo.mtime &&
         ifModifiedSince &&
         fileInfo.mtime.getTime() < new Date(ifModifiedSince).getTime() + 1000)
     ) {
-      const status = Status.NotModified;
-      const statusText = STATUS_TEXT[status];
-
       file.close();
 
-      return new Response(null, {
-        status,
-        statusText,
-        headers,
-      });
+      return createCommonResponse(Status.NotModified, null, { headers });
     }
   }
 
@@ -223,61 +191,28 @@ export async function serveFile(
       start > maxRange ||
       end > maxRange)
   ) {
-    const status = Status.RequestedRangeNotSatisfiable;
-    const statusText = STATUS_TEXT[status];
-
     file.close();
 
-    return new Response(statusText, {
-      status,
-      statusText,
-      headers,
-    });
+    return createCommonResponse(
+      Status.RequestedRangeNotSatisfiable,
+      undefined,
+      {
+        headers,
+      },
+    );
   }
 
   // Set content length
   const contentLength = end - start + 1;
   headers.set("content-length", `${contentLength}`);
   if (range && parsed) {
-    // Create a stream of the file instead of loading it into memory
-    let bytesSent = 0;
-    const body = new ReadableStream({
-      async start() {
-        if (start > 0) {
-          await file.seek(start, Deno.SeekMode.Start);
-        }
-      },
-      async pull(controller) {
-        const bytes = new Uint8Array(DEFAULT_CHUNK_SIZE);
-        const bytesRead = await file.read(bytes);
-        if (bytesRead === null) {
-          file.close();
-          controller.close();
-          return;
-        }
-        controller.enqueue(
-          bytes.slice(0, Math.min(bytesRead, contentLength - bytesSent)),
-        );
-        bytesSent += bytesRead;
-        if (bytesSent > contentLength) {
-          file.close();
-          controller.close();
-        }
-      },
-    });
-
-    return new Response(body, {
-      status: Status.PartialContent,
-      statusText: STATUS_TEXT[Status.PartialContent],
+    await file.seek(start, Deno.SeekMode.Start);
+    return createCommonResponse(Status.PartialContent, file.readable, {
       headers,
     });
   }
 
-  return new Response(file.readable, {
-    status: Status.OK,
-    statusText: STATUS_TEXT[Status.OK],
-    headers,
-  });
+  return createCommonResponse(Status.OK, file.readable, { headers });
 }
 
 // TODO(bartlomieju): simplify this after deno.stat and deno.readDir are fixed
@@ -328,32 +263,17 @@ async function serveDirIndex(
   const headers = setBaseHeaders();
   headers.set("content-type", "text/html");
 
-  return new Response(page, { status: Status.OK, headers });
+  return createCommonResponse(Status.OK, page, { headers });
 }
 
 function serveFallback(_req: Request, e: Error): Promise<Response> {
   if (e instanceof URIError) {
-    return Promise.resolve(
-      new Response(STATUS_TEXT[Status.BadRequest], {
-        status: Status.BadRequest,
-        statusText: STATUS_TEXT[Status.BadRequest],
-      }),
-    );
+    return Promise.resolve(createCommonResponse(Status.BadRequest));
   } else if (e instanceof Deno.errors.NotFound) {
-    return Promise.resolve(
-      new Response(STATUS_TEXT[Status.NotFound], {
-        status: Status.NotFound,
-        statusText: STATUS_TEXT[Status.NotFound],
-      }),
-    );
+    return Promise.resolve(createCommonResponse(Status.NotFound));
   }
 
-  return Promise.resolve(
-    new Response(STATUS_TEXT[Status.InternalServerError], {
-      status: Status.InternalServerError,
-      statusText: STATUS_TEXT[Status.InternalServerError],
-    }),
-  );
+  return Promise.resolve(createCommonResponse(Status.InternalServerError));
 }
 
 function serverLog(req: Request, status: number) {
@@ -502,18 +422,38 @@ export interface ServeDirOptions {
   fsRoot?: string;
   /** Specified that part is stripped from the beginning of the requested pathname. */
   urlRoot?: string;
-  /** Enable directory listing. Defaults to false. */
+  /** Enable directory listing.
+   *
+   * @default {false}
+   */
   showDirListing?: boolean;
-  /** Serves dotfiles. Defaults to false. */
+  /** Serves dotfiles.
+   *
+   * @default {false}
+   */
   showDotfiles?: boolean;
   /** Serves index.html as the index file of the directory. */
   showIndex?: boolean;
-  /** Enable CORS via the "Access-Control-Allow-Origin" header. Defaults to false. */
+  /** Enable CORS via the "Access-Control-Allow-Origin" header.
+   *
+   * @default {false}
+   */
   enableCors?: boolean;
-  /** Do not print request level logs. Defaults to false. Defaults to false. */
+  /** Do not print request level logs. Defaults to false.
+   *
+   * @default {false}
+   */
   quiet?: boolean;
-  /** The algorithm to use for generating the ETag. Defaults to "fnv1a". */
-  etagAlgorithm?: EtagAlgorithm;
+  /** The algorithm to use for generating the ETag.
+   *
+   * @default {"fnv1a"}
+   */
+  etagAlgorithm?: DigestAlgorithm;
+  /** Headers to add to each response
+   *
+   * @default {[]}
+   */
+  headers?: string[];
 }
 
 /**
@@ -550,15 +490,6 @@ export interface ServeDirOptions {
  * The above example serves `./public/path/to/file` for the request to `/static/path/to/file`.
  *
  * @param req The request to handle
- * @param opts
- * @param opts.fsRoot Serves the files under the given directory root. Defaults to your current directory.
- * @param opts.urlRoot Specified that part is stripped from the beginning of the requested pathname.
- * @param opts.showDirListing Enable directory listing. Defaults to false.
- * @param opts.showDotfiles Serves dotfiles. Defaults to false.
- * @param opts.showIndex Serves index.html as the index file of the directory.
- * @param opts.enableCors Enable CORS via the "Access-Control-Allow-Origin" header. Defaults to false.
- * @param opts.quiet Do not print request level logs. Defaults to false.
- * @param opts.etagAlgorithm Etag The algorithm to use for generating the ETag. Defaults to "fnv1a".
  */
 export async function serveDir(req: Request, opts: ServeDirOptions = {}) {
   let response: Response | undefined = undefined;
@@ -629,53 +560,34 @@ export async function serveDir(req: Request, opts: ServeDirOptions = {}) {
 
   if (!opts.quiet) serverLog(req, response!.status);
 
+  if (opts.headers) {
+    for (const header of opts.headers) {
+      const headerSplit = header.split(":");
+      const name = headerSplit[0];
+      const value = headerSplit.slice(1).join(":");
+      response.headers.append(name, value);
+    }
+  }
+
   return response!;
 }
 
 function normalizeURL(url: string): string {
-  let normalizedUrl = url;
-
-  try {
-    //allowed per https://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html
-    const absoluteURI = new URL(normalizedUrl);
-    normalizedUrl = absoluteURI.pathname;
-  } catch (e) {
-    //wasn't an absoluteURI
-    if (!(e instanceof TypeError)) {
-      throw e;
-    }
-  }
-
-  try {
-    normalizedUrl = decodeURIComponent(normalizedUrl);
-  } catch (e) {
-    if (!(e instanceof URIError)) {
-      throw e;
-    }
-  }
-
-  if (normalizedUrl[0] !== "/") {
-    throw new URIError("The request URI is malformed.");
-  }
-
-  normalizedUrl = posix.normalize(normalizedUrl);
-  const startOfParams = normalizedUrl.indexOf("?");
-
-  return startOfParams > -1
-    ? normalizedUrl.slice(0, startOfParams)
-    : normalizedUrl;
+  return posix.normalize(decodeURIComponent(new URL(url).pathname));
 }
 
 function main() {
   const serverArgs = parse(Deno.args, {
-    string: ["port", "host", "cert", "key"],
-    boolean: ["help", "dir-listing", "dotfiles", "cors", "verbose"],
+    string: ["port", "host", "cert", "key", "header"],
+    boolean: ["help", "dir-listing", "dotfiles", "cors", "verbose", "version"],
     negatable: ["dir-listing", "dotfiles", "cors"],
+    collect: ["header"],
     default: {
       "dir-listing": true,
       dotfiles: true,
       cors: true,
       verbose: false,
+      version: false,
       host: "0.0.0.0",
       port: "4507",
       cert: "",
@@ -687,15 +599,23 @@ function main() {
       k: "key",
       h: "help",
       v: "verbose",
+      V: "version",
+      H: "header",
     },
   });
   const port = Number(serverArgs.port);
+  const headers = serverArgs.header || [];
   const host = serverArgs.host;
   const certFile = serverArgs.cert;
   const keyFile = serverArgs.key;
 
   if (serverArgs.help) {
     printUsage();
+    Deno.exit();
+  }
+
+  if (serverArgs.version) {
+    console.log(`Deno File Server ${VERSION}`);
     Deno.exit();
   }
 
@@ -717,6 +637,7 @@ function main() {
       showDotfiles: serverArgs.dotfiles,
       enableCors: serverArgs.cors,
       quiet: !serverArgs.verbose,
+      headers,
     });
   };
 
@@ -735,7 +656,7 @@ function main() {
 }
 
 function printUsage() {
-  console.log(`Deno File Server
+  console.log(`Deno File Server ${VERSION}
   Serves a local directory in HTTP.
 
 INSTALL:
@@ -745,16 +666,20 @@ USAGE:
   file_server [path] [options]
 
 OPTIONS:
-  -h, --help          Prints help information
-  -p, --port <PORT>   Set port
-  --cors              Enable CORS via the "Access-Control-Allow-Origin" header
-  --host     <HOST>   Hostname (default is 0.0.0.0)
-  -c, --cert <FILE>   TLS certificate file (enables TLS)
-  -k, --key  <FILE>   TLS key file (enables TLS)
-  --no-dir-listing    Disable directory listing
-  --no-dotfiles       Do not show dotfiles
-  --no-cors           Disable cross-origin resource sharing
-  -v, --verbose       Print request level logs
+  -h, --help            Prints help information
+  -p, --port <PORT>     Set port
+  --cors                Enable CORS via the "Access-Control-Allow-Origin" header
+  --host     <HOST>     Hostname (default is 0.0.0.0)
+  -c, --cert <FILE>     TLS certificate file (enables TLS)
+  -k, --key  <FILE>     TLS key file (enables TLS)
+  -H, --header <HEADER> Sets a header on every request.
+                        (e.g. --header "Cache-Control: no-cache")
+                        This option can be specified multiple times.
+  --no-dir-listing      Disable directory listing
+  --no-dotfiles         Do not show dotfiles
+  --no-cors             Disable cross-origin resource sharing
+  -v, --verbose         Print request level logs
+  -V, --version         Print version information
 
   All TLS options are required when one is provided.`);
 }

@@ -1,6 +1,8 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 
 /** A library of assertion functions.
+ * If the assertion is false an `AssertionError` will be thrown which will
+ * result in pretty-printed diff of failing assertion.
  *
  * This module is browser compatible, but do not rely on good formatting of
  * values for AssertionError messages in browsers.
@@ -153,11 +155,15 @@ export function assertFalse(expr: unknown, msg = ""): asserts expr is Falsy {
  * deeply equal, then throw.
  *
  * Type parameter can be specified to ensure values under comparison have the same type.
- * For example:
- * ```ts
- * import { assertEquals } from "./asserts.ts";
  *
- * assertEquals<number>(1, 2)
+ * @example
+ * ```ts
+ * import { assertEquals } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
+ *
+ * Deno.test("example", function (): void {
+ *   assertEquals("world", "world");
+ *   assertEquals({ hello: "world" }, { hello: "world" });
+ * });
  * ```
  */
 export function assertEquals<T>(actual: T, expected: T, msg?: string) {
@@ -189,9 +195,10 @@ export function assertEquals<T>(actual: T, expected: T, msg?: string) {
  * If not then throw.
  *
  * Type parameter can be specified to ensure values under comparison have the same type.
- * For example:
+ *
+ * @example
  * ```ts
- * import { assertNotEquals } from "./asserts.ts";
+ * import { assertNotEquals } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
  *
  * assertNotEquals<number>(1, 2)
  * ```
@@ -222,10 +229,22 @@ export function assertNotEquals<T>(actual: T, expected: T, msg?: string) {
  * Make an assertion that `actual` and `expected` are strictly equal. If
  * not then throw.
  *
+ * @example
  * ```ts
- * import { assertStrictEquals } from "./asserts.ts";
+ * import { assertStrictEquals } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
  *
- * assertStrictEquals(1, 2)
+ * Deno.test("isStrictlyEqual", function (): void {
+ *   const a = {};
+ *   const b = a;
+ *   assertStrictEquals(a, b);
+ * });
+ *
+ * // This test fails
+ * Deno.test("isNotStrictlyEqual", function (): void {
+ *   const a = {};
+ *   const b = {};
+ *   assertStrictEquals(a, b);
+ * });
  * ```
  */
 export function assertStrictEquals<T>(
@@ -277,7 +296,7 @@ export function assertStrictEquals<T>(
  * If the values are strictly equal then throw.
  *
  * ```ts
- * import { assertNotStrictEquals } from "./asserts.ts";
+ * import { assertNotStrictEquals } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
  *
  * assertNotStrictEquals(1, 1)
  * ```
@@ -302,8 +321,9 @@ export function assertNotStrictEquals<T>(
  * floating-point representation limitations.
  * If the values are not almost equal then throw.
  *
+ * @example
  * ```ts
- * import { assertAlmostEquals, assertThrows } from "./asserts.ts";
+ * import { assertAlmostEquals, assertThrows } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
  *
  * assertAlmostEquals(0.1, 0.2);
  *
@@ -426,10 +446,10 @@ export function assertStringIncludes(
  * If not then an error will be thrown.
  *
  * Type parameter can be specified to ensure values under comparison have the same type.
- * For example:
  *
+ * @example
  * ```ts
- * import { assertArrayIncludes } from "./asserts.ts";
+ * import { assertArrayIncludes } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
  *
  * assertArrayIncludes<number>([1, 2], [2])
  * ```
@@ -615,15 +635,63 @@ export function assertIsError<E extends Error = Error>(
   }
 }
 
-/** Executes a function, expecting it to throw. If it does not, then it
- * throws. */
+/**
+ * Executes a function, expecting it to throw. If it does not, then it
+ * throws.
+ *
+ * @example
+ * ```ts
+ * import { assertThrows } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
+ *
+ * Deno.test("doesThrow", function (): void {
+ *   assertThrows((): void => {
+ *     throw new TypeError("hello world!");
+ *   });
+ * });
+ *
+ * // This test will not pass.
+ * Deno.test("fails", function (): void {
+ *   assertThrows((): void => {
+ *     console.log("Hello world");
+ *   });
+ * });
+ * ```
+ */
 export function assertThrows(
   fn: () => unknown,
   msg?: string,
 ): unknown;
-/** Executes a function, expecting it to throw. If it does not, then it
+/**
+ * Executes a function, expecting it to throw. If it does not, then it
  * throws. An error class and a string that should be included in the
- * error message can also be asserted. */
+ * error message can also be asserted.
+ *
+ * @example
+ *
+ * ```ts
+ * import { assertThrows } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
+ *
+ * Deno.test("doesThrow", function (): void {
+ *   assertThrows((): void => {
+ *     throw new TypeError("hello world!");
+ *   }, TypeError);
+ *   assertThrows(
+ *     (): void => {
+ *       throw new TypeError("hello world!");
+ *     },
+ *     TypeError,
+ *     "hello",
+ *   );
+ * });
+ *
+ * // This test will not pass.
+ * Deno.test("fails", function (): void {
+ *   assertThrows((): void => {
+ *     console.log("Hello world");
+ *   });
+ * });
+ * ```
+ */
 export function assertThrows<E extends Error = Error>(
   fn: () => unknown,
   // deno-lint-ignore no-explicit-any
@@ -686,14 +754,72 @@ export function assertThrows<E extends Error = Error>(
   return err;
 }
 
-/** Executes a function which returns a promise, expecting it to reject. */
+/**
+ * Executes a function which returns a promise, expecting it to reject.
+ *
+ * @example
+ * ```ts
+ * import { assertRejects } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
+ *
+ * Deno.test("doesThrow", async function () {
+ *   await assertRejects(
+ *     async () => {
+ *       throw new TypeError("hello world!");
+ *     },
+ *   );
+ *   await assertRejects(
+ *     async () => {
+ *       return Promise.reject(new Error());
+ *     },
+ *   );
+ * });
+ *
+ * // This test will not pass.
+ * Deno.test("fails", async function () {
+ *   await assertRejects(
+ *     async () => {
+ *       console.log("Hello world");
+ *     },
+ *   );
+ * });
+ * ```
+ */
 export function assertRejects(
   fn: () => PromiseLike<unknown>,
   msg?: string,
 ): Promise<unknown>;
-/** Executes a function which returns a promise, expecting it to reject.
+/**
+ * Executes a function which returns a promise, expecting it to reject.
  * If it does not, then it throws. An error class and a string that should be
- * included in the error message can also be asserted. */
+ * included in the error message can also be asserted.
+ *
+ * @example
+ * ```ts
+ * import { assertRejects } from "https://deno.land/std@$STD_VERSION/testing/asserts.ts";
+ *
+ * Deno.test("doesThrow", async function () {
+ *   await assertRejects(async () => {
+ *     throw new TypeError("hello world!");
+ *   }, TypeError);
+ *   await assertRejects(
+ *     async () => {
+ *       throw new TypeError("hello world!");
+ *     },
+ *     TypeError,
+ *     "hello",
+ *   );
+ * });
+ *
+ * // This test will not pass.
+ * Deno.test("fails", async function () {
+ *   await assertRejects(
+ *     async () => {
+ *       console.log("Hello world");
+ *     },
+ *   );
+ * });
+ * ```
+ */
 export function assertRejects<E extends Error = Error>(
   fn: () => PromiseLike<unknown>,
   // deno-lint-ignore no-explicit-any

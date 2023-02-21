@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 // Copyright 2014-2017 browserify-aes contributors. All rights reserved. MIT license.
 // Copyright 2013 Maxwell Krohn. All rights reserved. MIT license.
 // Copyright 2009-2013 Jeff Mott. All rights reserved. MIT license.
@@ -9,7 +9,7 @@ import {
   assertEquals,
   assertThrows,
 } from "../../../../../testing/asserts.ts";
-import { fromFileUrl } from "../../../../../path/mod.ts";
+import { fromFileUrl } from "../../../../path.ts";
 import * as crypto from "../mod.js";
 import { MODES } from "../modes/mod.js";
 const CIPHERS = Object.keys(MODES);
@@ -310,7 +310,8 @@ Deno.test("handle long uft8 plaintexts", function () {
     return decipher.update(enc, "base64", "utf8") + decipher.final("utf8");
   }
 
-  const input = "ふっかつ　あきる　すぶり　はやい　つける　まゆげ　たんさん　みんぞく　ねほりはほり　せまい　たいまつばな　ひはん";
+  const input =
+    "ふっかつ　あきる　すぶり　はやい　つける　まゆげ　たんさん　みんぞく　ねほりはほり　せまい　たいまつばな　ひはん";
   const enc = encrypt(input, "a");
 
   const dec = decrypt(enc, "a");

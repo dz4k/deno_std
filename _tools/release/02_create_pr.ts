@@ -1,5 +1,5 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env --allow-net --allow-run=git --no-check
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import { createOctoKit, getGitHubRepository } from "./deps.ts";
 import { loadRepo, VersionFile } from "./repo.ts";
 
@@ -30,14 +30,17 @@ const openedPr = await octoKit.request("POST /repos/{owner}/{repo}/pulls", {
 });
 console.log(`Opened PR at ${openedPr.data.url}`);
 
+const TARGET = "../deno/target/release/deno";
+
 function getPrBody() {
   let text = `Bumped version for ${newVersion}\n\n` +
     `Please ensure:\n` +
     `- [ ] Version in version.ts is updated correctly\n` +
     `- [ ] Releases.md is updated correctly\n` +
-    `- [ ] All the tests in this branch have been run against the CLI release being done ` +
-    `(\`../deno/target/release/deno task test && ../deno/target/release/deno task node:unit && ` +
-    `../deno/target/release/deno task node:test\`)\n\n` +
+    `- [ ] All the tests in this branch have been run against the CLI release being done` +
+    "      ```shell" +
+    `      ${TARGET} task test && ${TARGET} task node:unit && ${TARGET} task node:test` +
+    "      ```\n" +
     `To make edits to this PR:\n` +
     "```shell\n" +
     `git fetch upstream ${newBranchName} && git checkout -b ${newBranchName} upstream/${newBranchName}\n` +

@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 "use strict";
 
 import { Buffer } from "../../buffer.ts";
@@ -18,7 +18,8 @@ import {
   isDate,
   isUint8Array,
 } from "../util/types.ts";
-import { deprecate, once } from "../util.mjs";
+import { once } from "../util.mjs";
+import { deprecate } from "../../util.ts";
 import { toPathIfFileURL } from "../url.ts";
 import {
   validateAbortSignal,
@@ -35,7 +36,7 @@ const kStats = Symbol("stats");
 import assert from "../assert.mjs";
 import { lstat, lstatSync } from "../../_fs/_fs_lstat.ts";
 import { stat, statSync } from "../../_fs/_fs_stat.ts";
-import { isWindows } from "../../../_util/os.ts";
+import { isWindows } from "../../_util/os.ts";
 import process from "../../process.ts";
 
 import {

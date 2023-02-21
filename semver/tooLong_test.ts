@@ -1,5 +1,5 @@
 // Copyright Isaac Z. Schlueter and Contributors. All rights reserved. ISC license.
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 import { assertEquals, assertThrows } from "../testing/asserts.ts";
 import * as semver from "./mod.ts";
 
@@ -10,7 +10,7 @@ Deno.test("versionIsTooLong", function () {
     new semver.SemVer(v);
   });
   assertEquals(semver.valid(v), null);
-  assertEquals(semver.inc(v, "patch"), null);
+  assertEquals(semver.increment(v, "patch"), null);
 });
 
 Deno.test("tooBig", function () {
@@ -19,7 +19,7 @@ Deno.test("tooBig", function () {
     new semver.SemVer(v);
   });
   assertEquals(semver.valid(v), null);
-  assertEquals(semver.inc(v, "patch"), null);
+  assertEquals(semver.increment(v, "patch"), null);
 });
 
 Deno.test("parsingNullDoesNotThrow", function () {

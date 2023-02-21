@@ -1,4 +1,4 @@
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
+// Copyright 2018-2023 the Deno authors. All rights reserved. MIT license.
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -30,7 +30,11 @@ import { Buffer } from "../buffer.ts";
 import type { ErrnoException } from "../internal/errors.ts";
 import { isIP } from "../internal/net.ts";
 
-import { isLinux, isWindows } from "../../_util/os.ts";
+import { isLinux, isWindows } from "../_util/os.ts";
+
+// @ts-ignore Deno[Deno.internal] is used on purpose here
+const DenoListenDatagram = Deno[Deno.internal]?.nodeUnstable?.listenDatagram ||
+  Deno.listenDatagram;
 
 type MessageType = string | Uint8Array | Buffer | DataView;
 
@@ -316,12 +320,14 @@ export class UDP extends HandleWrap {
     let listener;
 
     try {
-      listener = Deno.listenDatagram(listenOptions);
+      listener = DenoListenDatagram(listenOptions);
     } catch (e) {
       if (e instanceof Deno.errors.AddrInUse) {
         return codeMap.get("EADDRINUSE")!;
       } else if (e instanceof Deno.errors.AddrNotAvailable) {
         return codeMap.get("EADDRNOTAVAIL")!;
+      } else if (e instanceof Deno.errors.PermissionDenied) {
+        throw e;
       }
 
       // TODO(cmorten): map errors to appropriate error codes.
